@@ -83,6 +83,13 @@ public final class RunService implements AutoCloseable {
         return true;
     }
 
+    public boolean cleanup(UUID runId) throws IOException, InterruptedException {
+        RunRecord record = store.load(runId).orElseThrow(() -> new IllegalArgumentException("Unknown run: " + runId));
+        if (!RunRecord.isTerminal(record.status())) throw new IllegalStateException("Only terminal runs can be cleaned up");
+        if (record.effectiveDirectory() == null) return false;
+        return workspaceManager.removeManagedWorktree(Path.of(record.effectiveDirectory()));
+    }
+
     public List<AgentHealth> doctor(Path workingDirectory, boolean runSmokeTests) {
         List<AgentHealth> values = new ArrayList<>();
         try {

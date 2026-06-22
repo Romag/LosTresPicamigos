@@ -64,6 +64,12 @@ class GitWorkspaceManagerTest {
             assertTrue(Files.isRegularFile(lease.directory().resolveSibling(
                     lease.directory().getFileName() + ".picamigos-owned")));
             assertEquals("", gitOutput(lease.directory(), "status", "--porcelain"));
+            String branch = lease.branch();
+            Path directory = lease.directory();
+            assertTrue(manager.removeManagedWorktree(directory));
+            assertFalse(Files.exists(directory));
+            assertFalse(Files.exists(directory.resolveSibling(directory.getFileName() + ".picamigos-owned")));
+            assertEquals(branch, gitOutput(repository, "branch", "--list", branch).replace("* ", "").strip());
         }
     }
 

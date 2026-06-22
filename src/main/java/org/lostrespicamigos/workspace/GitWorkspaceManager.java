@@ -70,6 +70,26 @@ public final class GitWorkspaceManager {
         return new WorkspaceLease(destination, null, warnings, () -> cleanup(repository, destination));
     }
 
+    public boolean removeManagedWorktree(Path destination) throws IOException, InterruptedException {
+        Path worktrees = config.home().resolve("worktrees").toAbsolutePath().normalize();
+        Path normalized = destination.toAbsolutePath().normalize();
+        Path marker = ownershipMarker(normalized);
+        if (!worktrees.equals(normalized.getParent()) || Files.isSymbolicLink(normalized)
+                || !Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS)) {
+            throw new SecurityException("Refusing to remove an unowned worktree: " + destination);
+        }
+        Path repository = Path.of(Files.readString(marker).strip()).toRealPath();
+        if (!repository.startsWith(config.allowedRoot().toRealPath())) {
+            throw new SecurityException("Managed worktree repository is outside the configured root");
+        }
+        try (RepositoryLock ignored = repositoryLock(repository)) {
+            GitClient.Result result = git.run(repository, List.of("worktree", "remove", "--force", normalized.toString()));
+            if (result.exitCode() != 0) throw new IOException("Git could not remove the managed worktree: " + result.stderr().strip());
+        }
+        Files.deleteIfExists(marker);
+        return true;
+    }
+
     private Path repositoryRoot(Path directory) throws IOException, InterruptedException {
         GitClient.Result result = git.require(directory, List.of("rev-parse", "--show-toplevel"));
         return Path.of(result.stdoutText().strip()).toRealPath();

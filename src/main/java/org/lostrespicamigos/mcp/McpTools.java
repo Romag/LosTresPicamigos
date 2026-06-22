@@ -32,7 +32,7 @@ public final class McpTools {
     }
 
     public List<SyncToolSpecification> all() {
-        return List.of(doctor(), delegate(), status(), result(), cancel(), listRuns(), startWorkflow(), workflowStatus());
+        return List.of(doctor(), delegate(), status(), result(), cancel(), cleanup(), listRuns(), startWorkflow(), workflowStatus());
     }
 
     private SyncToolSpecification doctor() {
@@ -109,6 +109,16 @@ public final class McpTools {
                         "cancellationRequested", runs.cancel(uuid(arguments, "runId"))));
     }
 
+    private SyncToolSpecification cleanup() {
+        Map<String, Object> schema = objectSchema(Map.of("runId", stringProperty("Terminal run UUID")), List.of("runId"));
+        return specification("picamigos_cleanup_run",
+                "Remove a terminal run's owned implementation worktree while preserving its branch and run artifacts",
+                schema, false, true, arguments -> {
+                    UUID id = uuid(arguments, "runId");
+                    return Map.of("runId", id.toString(), "worktreeRemoved", runs.cleanup(id), "branchPreserved", true);
+                });
+    }
+
     private SyncToolSpecification listRuns() {
         Map<String, Object> schema = objectSchema(Map.of(), List.of());
         return specification("picamigos_list_runs", "List recent persisted runs", schema, true,
@@ -159,9 +169,14 @@ public final class McpTools {
 
     private SyncToolSpecification specification(String name, String description, Map<String, Object> schema,
                                                 boolean readOnly, ThrowingFunction handler) {
+        return specification(name, description, schema, readOnly, false, handler);
+    }
+
+    private SyncToolSpecification specification(String name, String description, Map<String, Object> schema,
+                                                boolean readOnly, boolean destructive, ThrowingFunction handler) {
         Tool tool = Tool.builder(name, schema)
                 .description(description)
-                .annotations(ToolAnnotations.builder().readOnlyHint(readOnly).destructiveHint(false)
+                .annotations(ToolAnnotations.builder().readOnlyHint(readOnly).destructiveHint(destructive)
                         .idempotentHint(readOnly).openWorldHint(false).build())
                 .build();
         return SyncToolSpecification.builder().tool(tool).callHandler((exchange, request) -> {
