@@ -60,6 +60,7 @@ public final class McpTools {
                 "isolation", enumProperty("snapshot", "worktree", "direct"),
                 "session", session,
                 "timeoutSeconds", integerProperty(1, 7200),
+                "includeUntracked", booleanProperty("Copy bounded untracked regular files into isolated workspaces"),
                 "allowDangerousPermissions", booleanProperty("Explicit per-run opt-in; also requires server opt-in")),
                 List.of("agent", "task", "workingDirectory"));
         return specification("picamigos_delegate", "Start an asynchronous planning, implementation, review, or consultation run",
@@ -136,24 +137,26 @@ public final class McpTools {
                 "planner", enumProperty("codex", "claude", "antigravity"),
                 "implementer", enumProperty("codex", "claude", "antigravity"),
                 "reviewer", enumProperty("codex", "claude", "antigravity"),
+                "includeUntracked", booleanProperty("Copy bounded untracked regular files into workflow workspaces"),
                 "timeoutSeconds", integerProperty(1, 7200)), List.of("type", "workingDirectory", "task"));
         return specification("picamigos_start_workflow", "Start a review panel or plan-implement-review workflow",
                 schema, false, arguments -> {
                     WorkflowType type = WorkflowType.parse(string(arguments, "type", true));
                     Path directory = Path.of(string(arguments, "workingDirectory", true)).toAbsolutePath();
                     String task = string(arguments, "task", true);
+                    boolean includeUntracked = bool(arguments, "includeUntracked", false);
                     Duration timeout = Duration.ofSeconds(integer(arguments, "timeoutSeconds", 1800));
                     WorkflowRecord record;
                     if (type == WorkflowType.REVIEW_PANEL) {
                         Object raw = arguments.get("reviewers");
                         if (!(raw instanceof List<?> list)) throw new IllegalArgumentException("reviewers is required for review-panel");
                         List<AgentId> agents = list.stream().map(value -> AgentId.parse(value.toString())).toList();
-                        record = workflows.startReviewPanel(directory, task, agents, timeout);
+                        record = workflows.startReviewPanel(directory, task, agents, timeout, includeUntracked);
                     } else {
                         record = workflows.startPlanImplementReview(directory, task,
                                 AgentId.parse(string(arguments, "planner", true)),
                                 AgentId.parse(string(arguments, "implementer", true)),
-                                AgentId.parse(string(arguments, "reviewer", true)), timeout);
+                                AgentId.parse(string(arguments, "reviewer", true)), timeout, includeUntracked);
                     }
                     return Map.of("workflowId", record.workflowId().toString(), "status", record.status().name().toLowerCase(),
                             "stage", record.stage(), "runIds", record.runIds());
@@ -211,6 +214,7 @@ public final class McpTools {
         return new AgentRequest(AgentId.parse(string(arguments, "agent", true)), role,
                 string(arguments, "task", true), Path.of(string(arguments, "workingDirectory", true)).toAbsolutePath(),
                 access, isolation, sessionSpec, Duration.ofSeconds(integer(arguments, "timeoutSeconds", 1800)),
+                bool(arguments, "includeUntracked", false),
                 bool(arguments, "allowDangerousPermissions", false));
     }
 

@@ -27,6 +27,11 @@ public final class WorkflowService implements AutoCloseable {
 
     public WorkflowRecord startReviewPanel(Path workingDirectory, String task, List<AgentId> reviewers,
                                            Duration timeout) throws IOException {
+        return startReviewPanel(workingDirectory, task, reviewers, timeout, false);
+    }
+
+    public WorkflowRecord startReviewPanel(Path workingDirectory, String task, List<AgentId> reviewers,
+                                           Duration timeout, boolean includeUntracked) throws IOException {
         if (reviewers == null || reviewers.isEmpty() || reviewers.size() > 2) {
             throw new IllegalArgumentException("review-panel requires one or two reviewers");
         }
@@ -43,7 +48,8 @@ public final class WorkflowService implements AutoCloseable {
         try {
             for (AgentId reviewer : reviewers) {
                 AgentRequest request = new AgentRequest(reviewer, AgentRole.REVIEW, task, workingDirectory,
-                        AccessMode.READ_ONLY, IsolationMode.SNAPSHOT, SessionSpec.fresh(), timeout, false);
+                        AccessMode.READ_ONLY, IsolationMode.SNAPSHOT, SessionSpec.fresh(), timeout,
+                        includeUntracked, false);
                 runIds.add(runs.start(request).runId());
                 record = record.update(WorkflowStatus.RUNNING, "review", runIds, "Reviewers running independently");
                 store.save(record);
@@ -59,6 +65,12 @@ public final class WorkflowService implements AutoCloseable {
 
     public WorkflowRecord startPlanImplementReview(Path workingDirectory, String task, AgentId planner,
                                                    AgentId implementer, AgentId reviewer, Duration timeout) throws IOException {
+        return startPlanImplementReview(workingDirectory, task, planner, implementer, reviewer, timeout, false);
+    }
+
+    public WorkflowRecord startPlanImplementReview(Path workingDirectory, String task, AgentId planner,
+                                                   AgentId implementer, AgentId reviewer, Duration timeout,
+                                                   boolean includeUntracked) throws IOException {
         if (planner == implementer || implementer == reviewer) {
             throw new IllegalArgumentException("The implementer must differ from the planner and reviewer");
         }
@@ -72,7 +84,8 @@ public final class WorkflowService implements AutoCloseable {
         store.save(record);
         try {
             RunRecord planning = runs.start(new AgentRequest(planner, AgentRole.PLAN, task, workingDirectory,
-                    AccessMode.READ_ONLY, IsolationMode.SNAPSHOT, SessionSpec.fresh(), timeout, false));
+                    AccessMode.READ_ONLY, IsolationMode.SNAPSHOT, SessionSpec.fresh(), timeout,
+                    includeUntracked, false));
             record = record.update(WorkflowStatus.RUNNING, "plan", List.of(planning.runId()), "Planner running");
             store.save(record);
         } catch (IOException | RuntimeException e) {
@@ -80,7 +93,8 @@ public final class WorkflowService implements AutoCloseable {
             throw e;
         }
         WorkflowRecord runningRecord = record;
-        executor.submit(() -> continuePlanImplementReview(runningRecord, workingDirectory, task, implementer, reviewer, timeout));
+        executor.submit(() -> continuePlanImplementReview(runningRecord, workingDirectory, task, implementer,
+                reviewer, timeout, includeUntracked));
         return runningRecord;
     }
 
@@ -103,7 +117,8 @@ public final class WorkflowService implements AutoCloseable {
     }
 
     private void continuePlanImplementReview(WorkflowRecord record, Path workingDirectory, String task,
-                                             AgentId implementer, AgentId reviewer, Duration timeout) {
+                                             AgentId implementer, AgentId reviewer, Duration timeout,
+                                             boolean includeUntracked) {
         List<UUID> runIds = new ArrayList<>(record.runIds());
         try {
             RunRecord planning = await(runIds.getFirst());
@@ -119,7 +134,8 @@ public final class WorkflowService implements AutoCloseable {
                         + " task limit of " + handoffLimit + " characters");
             }
             RunRecord implementation = runs.start(new AgentRequest(implementer, AgentRole.IMPLEMENT, handoff,
-                    workingDirectory, AccessMode.WORKSPACE_WRITE, IsolationMode.WORKTREE, SessionSpec.fresh(), timeout, false));
+                    workingDirectory, AccessMode.WORKSPACE_WRITE, IsolationMode.WORKTREE, SessionSpec.fresh(), timeout,
+                    includeUntracked, false));
             runIds.add(implementation.runId());
             record = record.update(WorkflowStatus.RUNNING, "implement", runIds, "Implementer running in an isolated worktree");
             store.save(record);
@@ -133,7 +149,8 @@ public final class WorkflowService implements AutoCloseable {
             String reviewTask = "Review the implementation of this task:\n" + task
                     + "\n\nThe implementation was produced on branch " + implementation.branch() + ".";
             RunRecord review = runs.start(new AgentRequest(reviewer, AgentRole.REVIEW, reviewTask,
-                    implementationDirectory, AccessMode.READ_ONLY, IsolationMode.SNAPSHOT, SessionSpec.fresh(), timeout, false));
+                    implementationDirectory, AccessMode.READ_ONLY, IsolationMode.SNAPSHOT, SessionSpec.fresh(), timeout,
+                    includeUntracked, false));
             runIds.add(review.runId());
             record = record.update(WorkflowStatus.RUNNING, "review", runIds, "Reviewer running against the implementation snapshot");
             store.save(record);

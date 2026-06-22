@@ -12,9 +12,17 @@ public record AgentRequest(
         IsolationMode isolation,
         SessionSpec session,
         Duration timeout,
+        boolean includeUntracked,
         boolean allowDangerousPermissions) {
 
     public static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(30);
+
+    public AgentRequest(AgentId agent, AgentRole role, String task, Path workingDirectory, AccessMode access,
+                        IsolationMode isolation, SessionSpec session, Duration timeout,
+                        boolean allowDangerousPermissions) {
+        this(agent, role, task, workingDirectory, access, isolation, session, timeout, false,
+                allowDangerousPermissions);
+    }
 
     public AgentRequest {
         if (agent == null) throw new IllegalArgumentException("agent is required");

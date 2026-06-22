@@ -39,7 +39,7 @@ public final class RunStore {
         RequestArtifact artifact = new RequestArtifact(request.agent().value(), request.role().name(), request.task(),
                 request.workingDirectory().toString(), request.access().name(), request.isolation().name(),
                 request.session().mode().name(), request.session().id(), request.timeout().toSeconds(),
-                request.allowDangerousPermissions());
+                request.includeUntracked(), request.allowDangerousPermissions());
         writeAtomic(directory.resolve("request.json"), artifact);
         Files.write(directory.resolve("stdout.log"), new byte[0], StandardOpenOption.CREATE_NEW);
         Files.write(directory.resolve("stderr.log"), new byte[0], StandardOpenOption.CREATE_NEW);
@@ -139,6 +139,6 @@ public final class RunStore {
 
     private record RequestArtifact(String agent, String role, String task, String workingDirectory, String access,
                                    String isolation, String sessionMode, String sessionId, long timeoutSeconds,
-                                   boolean allowDangerousPermissions) {
+                                   boolean includeUntracked, boolean allowDangerousPermissions) {
     }
 }

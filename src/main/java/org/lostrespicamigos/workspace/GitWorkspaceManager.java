@@ -6,6 +6,7 @@ import org.lostrespicamigos.domain.AgentRequest;
 import org.lostrespicamigos.domain.IsolationMode;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -16,6 +17,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 public final class GitWorkspaceManager {
+    private static final int MAX_UNTRACKED_FILES = 10;
+    private static final long MAX_UNTRACKED_BYTES = 100 * 1024;
     private final PicamigosConfig config;
     private final GitClient git = new GitClient();
 
@@ -51,8 +54,10 @@ public final class GitWorkspaceManager {
                 git.require(repository, List.of("worktree", "add", "-b", branch, destination.toString(), "HEAD"));
             }
             writeOwnershipMarker(destination, repository);
+            List<String> warnings = new ArrayList<>();
+            transferUntracked(repository, destination, request.includeUntracked(), warnings);
             Path effectiveDirectory = effectiveDirectory(destination, requestedSubdirectory);
-            return new WorkspaceLease(effectiveDirectory, destination, branch, List.of(), null);
+            return new WorkspaceLease(effectiveDirectory, destination, branch, warnings, null);
         }
 
         try (RepositoryLock ignored = repositoryLock(repository)) {
@@ -68,8 +73,7 @@ public final class GitWorkspaceManager {
                 throw new IOException("Could not apply the working tree diff to the review snapshot: " + applied.stderr());
             }
         }
-        String untracked = git.require(repository, List.of("ls-files", "--others", "--exclude-standard")).stdoutText().strip();
-        if (!untracked.isBlank()) warnings.add("Untracked files are not included in this snapshot: " + untracked.lines().limit(10).toList());
+        transferUntracked(repository, destination, request.includeUntracked(), warnings);
         Path effectiveDirectory = effectiveDirectory(destination, requestedSubdirectory);
         return new WorkspaceLease(effectiveDirectory, destination, null, warnings, () -> cleanup(repository, destination));
     }
@@ -153,5 +157,46 @@ public final class GitWorkspaceManager {
                     + requestedSubdirectory);
         }
         return effective;
+    }
+
+    private void transferUntracked(Path repository, Path destination, boolean includeUntracked,
+                                   List<String> warnings) throws IOException, InterruptedException {
+        byte[] output = git.require(repository,
+                List.of("ls-files", "--others", "--exclude-standard", "-z")).stdout();
+        List<String> relativePaths = java.util.Arrays.stream(new String(output, StandardCharsets.UTF_8).split("\u0000"))
+                .filter(path -> !path.isEmpty()).toList();
+        if (relativePaths.isEmpty()) return;
+        if (!includeUntracked) {
+            warnings.add("Untracked files are not included: " + relativePaths.stream().limit(10).toList());
+            return;
+        }
+
+        int copiedFiles = 0;
+        long copiedBytes = 0;
+        List<String> skipped = new ArrayList<>();
+        for (String relativePath : relativePaths) {
+            Path source = repository.resolve(relativePath).normalize();
+            Path target = destination.resolve(relativePath).normalize();
+            if (!source.startsWith(repository) || !target.startsWith(destination)
+                    || Files.isSymbolicLink(source) || !Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)
+                    || !source.toRealPath().startsWith(repository)) {
+                skipped.add(relativePath + " (unsafe type or path)");
+                continue;
+            }
+            long size = Files.size(source);
+            if (copiedFiles >= MAX_UNTRACKED_FILES || copiedBytes + size > MAX_UNTRACKED_BYTES) {
+                skipped.add(relativePath + " (copy limit)");
+                continue;
+            }
+            if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+                skipped.add(relativePath + " (target exists)");
+                continue;
+            }
+            Files.createDirectories(target.getParent());
+            Files.copy(source, target);
+            copiedFiles++;
+            copiedBytes += size;
+        }
+        if (!skipped.isEmpty()) warnings.add("Some untracked files were not copied: " + skipped.stream().limit(10).toList());
     }
 }

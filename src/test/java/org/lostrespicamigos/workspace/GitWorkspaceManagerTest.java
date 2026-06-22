@@ -119,6 +119,29 @@ class GitWorkspaceManagerTest {
         }
     }
 
+    @Test
+    void copiesOnlyBoundedUntrackedFilesWhenRequested() throws Exception {
+        Path repository = temporary.resolve("untracked-repo");
+        Files.createDirectories(repository);
+        git(repository, "init", "-b", "main");
+        git(repository, "config", "user.email", "test@example.com");
+        git(repository, "config", "user.name", "Test");
+        Files.writeString(repository.resolve("tracked.txt"), "base\n");
+        git(repository, "add", "tracked.txt");
+        git(repository, "commit", "-m", "base");
+        Files.writeString(repository.resolve("new.txt"), "new content\n");
+        Files.write(repository.resolve("oversized.bin"), new byte[101 * 1024]);
+        GitWorkspaceManager manager = new GitWorkspaceManager(config(repository));
+        AgentRequest request = new AgentRequest(AgentId.CLAUDE, AgentRole.REVIEW, "Review", repository.toAbsolutePath(),
+                AccessMode.READ_ONLY, IsolationMode.SNAPSHOT, SessionSpec.fresh(), Duration.ofMinutes(1), true, false);
+
+        try (WorkspaceLease lease = manager.prepare(request, UUID.randomUUID())) {
+            assertEquals("new content\n", normalize(Files.readString(lease.directory().resolve("new.txt"))));
+            assertFalse(Files.exists(lease.directory().resolve("oversized.bin")));
+            assertTrue(lease.warnings().stream().anyMatch(warning -> warning.contains("oversized.bin (copy limit)")));
+        }
+    }
+
     private PicamigosConfig config(Path repository) {
         return new PicamigosConfig(temporary.resolve("home"), repository.toAbsolutePath(), null,
                 Map.of(AgentId.CODEX, "codex", AgentId.CLAUDE, "claude", AgentId.ANTIGRAVITY, "agy"),
