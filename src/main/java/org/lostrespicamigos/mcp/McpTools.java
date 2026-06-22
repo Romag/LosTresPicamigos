@@ -94,7 +94,8 @@ public final class McpTools {
                 arguments -> {
                     UUID id = uuid(arguments, "runId");
                     AgentResult value = runs.result(id).orElseThrow(() -> new IllegalStateException("Result is not available for run " + id));
-                    return Map.of("result", value,
+                    return Map.of("result", RunResultSummary.from(value),
+                            "resultUri", "picamigos://runs/" + id + "/result",
                             "stdoutUri", "picamigos://runs/" + id + "/stdout",
                             "stderrUri", "picamigos://runs/" + id + "/stderr",
                             "requestUri", "picamigos://runs/" + id + "/request");
