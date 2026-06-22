@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -86,6 +87,24 @@ public final class GitWorkspaceManager {
         }
         Files.deleteIfExists(marker);
         return true;
+    }
+
+    public List<Path> expiredManagedWorktrees(Instant cutoff) throws IOException {
+        Path worktrees = config.home().resolve("worktrees").toAbsolutePath().normalize();
+        if (!Files.isDirectory(worktrees, LinkOption.NOFOLLOW_LINKS)) return List.of();
+        try (var entries = Files.list(worktrees)) {
+            return entries.filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                    .filter(path -> path.getFileName().toString().endsWith(".picamigos-owned"))
+                    .filter(path -> {
+                        try {
+                            return Files.getLastModifiedTime(path, LinkOption.NOFOLLOW_LINKS).toInstant().isBefore(cutoff);
+                        } catch (IOException e) {
+                            return false;
+                        }
+                    })
+                    .map(path -> path.resolveSibling(path.getFileName().toString().replaceFirst("\\.picamigos-owned$", "")))
+                    .toList();
+        }
     }
 
     private Path repositoryRoot(Path directory) throws IOException, InterruptedException {

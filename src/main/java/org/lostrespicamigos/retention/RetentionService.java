@@ -30,6 +30,7 @@ public final class RetentionService {
         Instant cutoff = now.minus(retention);
         int removedRuns = 0;
         int removedWorkflows = 0;
+        int removedWorktrees = 0;
         int failures = 0;
         try {
             for (RunRecord run : runs.list()) {
@@ -56,13 +57,21 @@ public final class RetentionService {
                     System.err.println("Picamigos retention preserved workflow " + workflow.workflowId() + ": " + e.getMessage());
                 }
             }
+            for (Path worktree : workspaces.expiredManagedWorktrees(cutoff)) {
+                try {
+                    if (workspaces.removeManagedWorktree(worktree)) removedWorktrees++;
+                } catch (Exception e) {
+                    failures++;
+                    System.err.println("Picamigos retention preserved worktree " + worktree + ": " + e.getMessage());
+                }
+            }
         } catch (Exception e) {
             failures++;
             System.err.println("Picamigos retention scan failed: " + e.getMessage());
         }
-        return new CleanupReport(removedRuns, removedWorkflows, failures);
+        return new CleanupReport(removedRuns, removedWorkflows, removedWorktrees, failures);
     }
 
-    public record CleanupReport(int removedRuns, int removedWorkflows, int failures) {
+    public record CleanupReport(int removedRuns, int removedWorkflows, int removedWorktrees, int failures) {
     }
 }

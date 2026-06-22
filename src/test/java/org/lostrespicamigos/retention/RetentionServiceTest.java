@@ -42,6 +42,7 @@ class RetentionServiceTest {
 
         assertEquals(1, report.removedRuns());
         assertEquals(1, report.removedWorkflows());
+        assertEquals(0, report.removedWorktrees());
         assertEquals(0, report.failures());
         assertFalse(runs.load(expiredRun).isPresent());
         assertTrue(runs.load(recentRun).isPresent());

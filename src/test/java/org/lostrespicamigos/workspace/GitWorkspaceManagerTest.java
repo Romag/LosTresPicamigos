@@ -8,6 +8,7 @@ import org.lostrespicamigos.domain.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -70,6 +71,29 @@ class GitWorkspaceManagerTest {
             assertFalse(Files.exists(directory));
             assertFalse(Files.exists(directory.resolveSibling(directory.getFileName() + ".picamigos-owned")));
             assertEquals(branch, gitOutput(repository, "branch", "--list", branch).replace("* ", "").strip());
+        }
+    }
+
+    @Test
+    void findsExpiredOrphanedManagedWorktrees() throws Exception {
+        Path repository = temporary.resolve("orphan-repo");
+        Files.createDirectories(repository);
+        git(repository, "init", "-b", "main");
+        git(repository, "config", "user.email", "test@example.com");
+        git(repository, "config", "user.name", "Test");
+        Files.writeString(repository.resolve("file.txt"), "base\n");
+        git(repository, "add", "file.txt");
+        git(repository, "commit", "-m", "base");
+        GitWorkspaceManager manager = new GitWorkspaceManager(config(repository));
+        AgentRequest request = new AgentRequest(AgentId.CLAUDE, AgentRole.IMPLEMENT, "Implement", repository.toAbsolutePath(),
+                AccessMode.WORKSPACE_WRITE, IsolationMode.WORKTREE, SessionSpec.fresh(), Duration.ofMinutes(1), false);
+
+        try (WorkspaceLease lease = manager.prepare(request, UUID.randomUUID())) {
+            Path marker = lease.directory().resolveSibling(lease.directory().getFileName() + ".picamigos-owned");
+            Files.setLastModifiedTime(marker, java.nio.file.attribute.FileTime.from(Instant.EPOCH));
+
+            assertEquals(java.util.List.of(lease.directory()), manager.expiredManagedWorktrees(Instant.now()));
+            assertTrue(manager.removeManagedWorktree(lease.directory()));
         }
     }
 
