@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public final class GitWorkspaceManager {
@@ -26,8 +27,7 @@ public final class GitWorkspaceManager {
         Path source = request.workingDirectory().toRealPath();
         Path allowed = config.allowedRoot().toRealPath();
         Path managedWorktrees = config.home().resolve("worktrees").toAbsolutePath().normalize();
-        boolean managed = source.getParent() != null && source.getParent().equals(managedWorktrees)
-                && Files.isRegularFile(ownershipMarker(source), LinkOption.NOFOLLOW_LINKS);
+        boolean managed = managedWorktreeRoot(source, managedWorktrees).isPresent();
         if (!source.startsWith(allowed) && !managed) {
             throw new SecurityException("workingDirectory is outside the configured root: " + allowed);
         }
@@ -35,10 +35,11 @@ public final class GitWorkspaceManager {
             if (request.access() == AccessMode.WORKSPACE_WRITE && !config.allowDirectWrites()) {
                 throw new SecurityException("Direct writable delegation is disabled");
             }
-            return new WorkspaceLease(source, null, List.of(), null);
+            return new WorkspaceLease(source, null, null, List.of(), null);
         }
 
         Path repository = repositoryRoot(source);
+        Path requestedSubdirectory = repository.relativize(source);
         Path worktrees = config.home().resolve("worktrees");
         Files.createDirectories(worktrees);
         Path destination = worktrees.resolve(runId.toString());
@@ -50,7 +51,8 @@ public final class GitWorkspaceManager {
                 git.require(repository, List.of("worktree", "add", "-b", branch, destination.toString(), "HEAD"));
             }
             writeOwnershipMarker(destination, repository);
-            return new WorkspaceLease(destination, branch, List.of(), null);
+            Path effectiveDirectory = effectiveDirectory(destination, requestedSubdirectory);
+            return new WorkspaceLease(effectiveDirectory, destination, branch, List.of(), null);
         }
 
         try (RepositoryLock ignored = repositoryLock(repository)) {
@@ -68,14 +70,15 @@ public final class GitWorkspaceManager {
         }
         String untracked = git.require(repository, List.of("ls-files", "--others", "--exclude-standard")).stdoutText().strip();
         if (!untracked.isBlank()) warnings.add("Untracked files are not included in this snapshot: " + untracked.lines().limit(10).toList());
-        return new WorkspaceLease(destination, null, warnings, () -> cleanup(repository, destination));
+        Path effectiveDirectory = effectiveDirectory(destination, requestedSubdirectory);
+        return new WorkspaceLease(effectiveDirectory, destination, null, warnings, () -> cleanup(repository, destination));
     }
 
     public boolean removeManagedWorktree(Path destination) throws IOException, InterruptedException {
         Path worktrees = config.home().resolve("worktrees").toAbsolutePath().normalize();
-        Path normalized = destination.toAbsolutePath().normalize();
+        Path normalized = managedWorktreeRoot(destination.toAbsolutePath().normalize(), worktrees).orElse(null);
+        if (normalized == null) return false;
         Path marker = ownershipMarker(normalized);
-        if (!worktrees.equals(normalized.getParent()) || !Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS)) return false;
         if (Files.isSymbolicLink(normalized)) throw new SecurityException("Refusing to remove a symbolic-link worktree");
         Path repository = Path.of(Files.readString(marker).strip()).toRealPath();
         if (!repository.startsWith(config.allowedRoot().toRealPath())) {
@@ -132,5 +135,23 @@ public final class GitWorkspaceManager {
 
     private Path ownershipMarker(Path destination) {
         return destination.resolveSibling(destination.getFileName() + ".picamigos-owned");
+    }
+
+    private Optional<Path> managedWorktreeRoot(Path candidate, Path worktrees) {
+        if (!candidate.startsWith(worktrees)) return Optional.empty();
+        Path relative = worktrees.relativize(candidate);
+        if (relative.getNameCount() == 0) return Optional.empty();
+        Path root = worktrees.resolve(relative.getName(0)).toAbsolutePath().normalize();
+        return Files.isRegularFile(ownershipMarker(root), LinkOption.NOFOLLOW_LINKS)
+                ? Optional.of(root) : Optional.empty();
+    }
+
+    private Path effectiveDirectory(Path worktreeRoot, Path requestedSubdirectory) throws IOException {
+        Path effective = worktreeRoot.resolve(requestedSubdirectory).normalize();
+        if (!effective.startsWith(worktreeRoot) || !Files.isDirectory(effective, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Requested repository subdirectory is absent from the isolated worktree: "
+                    + requestedSubdirectory);
+        }
+        return effective;
     }
 }

@@ -97,6 +97,28 @@ class GitWorkspaceManagerTest {
         }
     }
 
+    @Test
+    void preservesRequestedSubdirectoryInAnIsolatedWorktree() throws Exception {
+        Path repository = temporary.resolve("subdirectory-repo");
+        Path module = Files.createDirectories(repository.resolve("module"));
+        git(repository, "init", "-b", "main");
+        git(repository, "config", "user.email", "test@example.com");
+        git(repository, "config", "user.name", "Test");
+        Files.writeString(module.resolve("pom.xml"), "<project/>\n");
+        git(repository, "add", "module/pom.xml");
+        git(repository, "commit", "-m", "base");
+        GitWorkspaceManager manager = new GitWorkspaceManager(config(repository));
+        AgentRequest request = new AgentRequest(AgentId.CLAUDE, AgentRole.IMPLEMENT, "Implement", module.toAbsolutePath(),
+                AccessMode.WORKSPACE_WRITE, IsolationMode.WORKTREE, SessionSpec.fresh(), Duration.ofMinutes(1), false);
+
+        try (WorkspaceLease lease = manager.prepare(request, UUID.randomUUID())) {
+            assertEquals("module", lease.directory().getFileName().toString());
+            assertEquals(lease.worktreeRoot().resolve("module"), lease.directory());
+            assertTrue(manager.removeManagedWorktree(lease.directory()));
+            assertFalse(Files.exists(lease.worktreeRoot()));
+        }
+    }
+
     private PicamigosConfig config(Path repository) {
         return new PicamigosConfig(temporary.resolve("home"), repository.toAbsolutePath(), null,
                 Map.of(AgentId.CODEX, "codex", AgentId.CLAUDE, "claude", AgentId.ANTIGRAVITY, "agy"),
