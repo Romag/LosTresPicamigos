@@ -5,6 +5,7 @@ import org.lostrespicamigos.domain.AgentRequest;
 import org.lostrespicamigos.domain.AgentResult;
 import org.lostrespicamigos.domain.RunRecord;
 import org.lostrespicamigos.domain.RunStatus;
+import org.lostrespicamigos.domain.OwnerProcess;
 import org.lostrespicamigos.retention.OwnedDirectoryCleaner;
 
 import java.io.IOException;
@@ -85,7 +86,7 @@ public final class RunStore {
 
     public synchronized void recoverAbandoned() throws IOException {
         for (RunRecord record : list()) {
-            boolean ownerAlive = ProcessHandle.of(record.ownerProcessId()).map(ProcessHandle::isAlive).orElse(false);
+            boolean ownerAlive = OwnerProcess.matches(record.ownerProcessId(), record.ownerStartedAt());
             if ((record.status() == RunStatus.RUNNING || record.status() == RunStatus.QUEUED) && !ownerAlive) {
                 save(record.transition(RunStatus.ABORTED, null, null, null, record.exitCode(),
                         "Server stopped before the run reached a terminal state"));

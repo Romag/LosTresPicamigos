@@ -7,6 +7,7 @@ import java.util.UUID;
 public record WorkflowRecord(
         UUID workflowId,
         long ownerProcessId,
+        Instant ownerStartedAt,
         WorkflowType type,
         WorkflowStatus status,
         String stage,
@@ -20,7 +21,7 @@ public record WorkflowRecord(
     }
 
     public WorkflowRecord update(WorkflowStatus newStatus, String newStage, List<UUID> newRunIds, String newMessage) {
-        return new WorkflowRecord(workflowId, ownerProcessId, type, newStatus, newStage, newRunIds, createdAt,
+        return new WorkflowRecord(workflowId, ownerProcessId, ownerStartedAt, type, newStatus, newStage, newRunIds, createdAt,
                 newStatus == WorkflowStatus.RUNNING ? null : Instant.now(), newMessage);
     }
 }

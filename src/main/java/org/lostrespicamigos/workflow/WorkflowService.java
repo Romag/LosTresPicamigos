@@ -36,7 +36,8 @@ public final class WorkflowService implements AutoCloseable {
         reviewers.forEach(runs::validateTarget);
         UUID id = UUID.randomUUID();
         List<UUID> runIds = new ArrayList<>();
-        WorkflowRecord record = new WorkflowRecord(id, ProcessHandle.current().pid(), WorkflowType.REVIEW_PANEL,
+        WorkflowRecord record = new WorkflowRecord(id, ProcessHandle.current().pid(), OwnerProcess.currentStartInstant(),
+                WorkflowType.REVIEW_PANEL,
                 WorkflowStatus.RUNNING, "starting", runIds, Instant.now(), null, "Starting independent reviewers");
         store.save(record);
         try {
@@ -65,7 +66,8 @@ public final class WorkflowService implements AutoCloseable {
         runs.validateTarget(implementer);
         runs.validateTarget(reviewer);
         UUID id = UUID.randomUUID();
-        WorkflowRecord record = new WorkflowRecord(id, ProcessHandle.current().pid(), WorkflowType.PLAN_IMPLEMENT_REVIEW,
+        WorkflowRecord record = new WorkflowRecord(id, ProcessHandle.current().pid(), OwnerProcess.currentStartInstant(),
+                WorkflowType.PLAN_IMPLEMENT_REVIEW,
                 WorkflowStatus.RUNNING, "starting", List.of(), Instant.now(), null, "Starting planner");
         store.save(record);
         try {

@@ -6,6 +6,7 @@ import java.util.UUID;
 public record RunRecord(
         UUID runId,
         long ownerProcessId,
+        Instant ownerStartedAt,
         AgentId agent,
         AgentRole role,
         RunStatus status,
@@ -22,7 +23,7 @@ public record RunRecord(
     public RunRecord transition(RunStatus newStatus, String newEffectiveDirectory, String newBranch,
                                 Long newProcessId, Integer newExitCode, String newMessage) {
         Instant now = Instant.now();
-        return new RunRecord(runId, ownerProcessId, agent, role, newStatus, workingDirectory,
+        return new RunRecord(runId, ownerProcessId, ownerStartedAt, agent, role, newStatus, workingDirectory,
                 newEffectiveDirectory == null ? effectiveDirectory : newEffectiveDirectory,
                 newBranch == null ? branch : newBranch,
                 createdAt,

@@ -55,7 +55,8 @@ class RetentionServiceTest {
         AgentRequest request = new AgentRequest(AgentId.CLAUDE, AgentRole.GENERAL, "task", temporary,
                 AccessMode.READ_ONLY, IsolationMode.DIRECT, SessionSpec.fresh(), Duration.ofMinutes(1), false);
         Instant completed = RunRecord.isTerminal(status) ? timestamp : null;
-        RunRecord record = new RunRecord(id, ProcessHandle.current().pid(), AgentId.CLAUDE, AgentRole.GENERAL,
+        RunRecord record = new RunRecord(id, ProcessHandle.current().pid(), OwnerProcess.currentStartInstant(),
+                AgentId.CLAUDE, AgentRole.GENERAL,
                 status, temporary.toString(), null, null, timestamp, timestamp, completed, null, 0, status.name());
         store.create(record, request);
         return id;
@@ -64,7 +65,8 @@ class RetentionServiceTest {
     private UUID saveWorkflow(WorkflowStore store, Instant timestamp, WorkflowStatus status) throws Exception {
         UUID id = UUID.randomUUID();
         Instant completed = status == WorkflowStatus.RUNNING ? null : timestamp;
-        store.save(new WorkflowRecord(id, ProcessHandle.current().pid(), WorkflowType.REVIEW_PANEL, status,
+        store.save(new WorkflowRecord(id, ProcessHandle.current().pid(), OwnerProcess.currentStartInstant(),
+                WorkflowType.REVIEW_PANEL, status,
                 "complete", List.of(), timestamp, completed, status.name()));
         return id;
     }

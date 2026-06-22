@@ -22,7 +22,8 @@ class RunStoreTest {
         AgentRequest request = new AgentRequest(AgentId.CODEX, AgentRole.GENERAL, "Inspect",
                 temporary.toAbsolutePath(), AccessMode.READ_ONLY, IsolationMode.DIRECT,
                 SessionSpec.fresh(), null, false);
-        RunRecord record = new RunRecord(id, Long.MAX_VALUE, AgentId.CODEX, AgentRole.GENERAL, RunStatus.RUNNING,
+        RunRecord record = new RunRecord(id, Long.MAX_VALUE, Instant.EPOCH,
+                AgentId.CODEX, AgentRole.GENERAL, RunStatus.RUNNING,
                 temporary.toString(), temporary.toString(), null, Instant.now(), Instant.now(), null,
                 123L, null, "Running");
         store.create(record, request);
@@ -43,7 +44,8 @@ class RunStoreTest {
         AgentRequest request = new AgentRequest(AgentId.CLAUDE, AgentRole.REVIEW, "Review",
                 temporary.toAbsolutePath(), AccessMode.READ_ONLY, IsolationMode.DIRECT,
                 SessionSpec.fresh(), null, false);
-        RunRecord record = new RunRecord(id, ProcessHandle.current().pid(), AgentId.CLAUDE, AgentRole.REVIEW,
+        RunRecord record = new RunRecord(id, ProcessHandle.current().pid(), OwnerProcess.currentStartInstant(),
+                AgentId.CLAUDE, AgentRole.REVIEW,
                 RunStatus.RUNNING, temporary.toString(), temporary.toString(), null, Instant.now(), Instant.now(),
                 null, null, null, "Running");
         store.create(record, request);
@@ -51,5 +53,22 @@ class RunStoreTest {
         store.recoverAbandoned();
 
         assertEquals(RunStatus.RUNNING, store.load(id).orElseThrow().status());
+    }
+
+    @Test
+    void abortsWhenALivePidHasADifferentStartInstant() throws Exception {
+        RunStore store = new RunStore(temporary, JsonSupport.createMapper());
+        UUID id = UUID.randomUUID();
+        AgentRequest request = new AgentRequest(AgentId.CLAUDE, AgentRole.REVIEW, "Review",
+                temporary.toAbsolutePath(), AccessMode.READ_ONLY, IsolationMode.DIRECT,
+                SessionSpec.fresh(), null, false);
+        RunRecord record = new RunRecord(id, ProcessHandle.current().pid(), Instant.EPOCH,
+                AgentId.CLAUDE, AgentRole.REVIEW, RunStatus.RUNNING, temporary.toString(),
+                temporary.toString(), null, Instant.now(), Instant.now(), null, null, null, "Running");
+        store.create(record, request);
+
+        store.recoverAbandoned();
+
+        assertEquals(RunStatus.ABORTED, store.load(id).orElseThrow().status());
     }
 }

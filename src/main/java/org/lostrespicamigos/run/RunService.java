@@ -49,7 +49,8 @@ public final class RunService implements AutoCloseable {
     public RunRecord start(AgentRequest request) throws IOException {
         validateRequest(request);
         UUID runId = UUID.randomUUID();
-        RunRecord record = new RunRecord(runId, ProcessHandle.current().pid(), request.agent(), request.role(), RunStatus.QUEUED,
+        RunRecord record = new RunRecord(runId, ProcessHandle.current().pid(), OwnerProcess.currentStartInstant(),
+                request.agent(), request.role(), RunStatus.QUEUED,
                 request.workingDirectory().toString(), null, null, Instant.now(), null, null,
                 null, null, "Queued");
         store.create(record, request);

@@ -3,6 +3,7 @@ package org.lostrespicamigos.workflow;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.lostrespicamigos.domain.WorkflowRecord;
 import org.lostrespicamigos.domain.WorkflowStatus;
+import org.lostrespicamigos.domain.OwnerProcess;
 import org.lostrespicamigos.retention.OwnedDirectoryCleaner;
 
 import java.io.IOException;
@@ -84,9 +85,10 @@ public final class WorkflowStore {
                 } catch (IOException ignored) {
                     continue;
                 }
-                boolean ownerAlive = ProcessHandle.of(record.ownerProcessId()).map(ProcessHandle::isAlive).orElse(false);
+                boolean ownerAlive = OwnerProcess.matches(record.ownerProcessId(), record.ownerStartedAt());
                 if (record.status() == WorkflowStatus.RUNNING && !ownerAlive) {
-                    save(new WorkflowRecord(record.workflowId(), record.ownerProcessId(), record.type(), WorkflowStatus.ABORTED,
+                    save(new WorkflowRecord(record.workflowId(), record.ownerProcessId(), record.ownerStartedAt(),
+                            record.type(), WorkflowStatus.ABORTED,
                             record.stage(), record.runIds(), record.createdAt(), Instant.now(),
                             "Server stopped before workflow completion"));
                 }
