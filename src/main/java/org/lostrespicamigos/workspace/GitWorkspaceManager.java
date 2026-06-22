@@ -7,6 +7,7 @@ import org.lostrespicamigos.domain.IsolationMode;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,7 +25,8 @@ public final class GitWorkspaceManager {
         Path source = request.workingDirectory().toRealPath();
         Path allowed = config.allowedRoot().toRealPath();
         Path managedWorktrees = config.home().resolve("worktrees").toAbsolutePath().normalize();
-        boolean managed = source.startsWith(managedWorktrees) && Files.isRegularFile(source.resolve(".picamigos-worktree"));
+        boolean managed = source.getParent() != null && source.getParent().equals(managedWorktrees)
+                && Files.isRegularFile(ownershipMarker(source), LinkOption.NOFOLLOW_LINKS);
         if (!source.startsWith(allowed) && !managed) {
             throw new SecurityException("workingDirectory is outside the configured root: " + allowed);
         }
@@ -46,13 +48,14 @@ public final class GitWorkspaceManager {
             try (RepositoryLock ignored = repositoryLock(repository)) {
                 git.require(repository, List.of("worktree", "add", "-b", branch, destination.toString(), "HEAD"));
             }
-            Files.writeString(destination.resolve(".picamigos-worktree"), runId.toString());
+            writeOwnershipMarker(destination, repository);
             return new WorkspaceLease(destination, branch, List.of(), null);
         }
 
         try (RepositoryLock ignored = repositoryLock(repository)) {
             git.require(repository, List.of("worktree", "add", "--detach", destination.toString(), "HEAD"));
         }
+        writeOwnershipMarker(destination, repository);
         List<String> warnings = new ArrayList<>();
         GitClient.Result diff = git.require(repository, List.of("diff", "--binary", "HEAD"));
         if (diff.stdout().length > 0) {
@@ -74,7 +77,9 @@ public final class GitWorkspaceManager {
 
     private void cleanup(Path repository, Path destination) {
         try (RepositoryLock ignored = repositoryLock(repository)) {
-            git.run(repository, List.of("worktree", "remove", "--force", destination.toString()));
+            GitClient.Result result = git.run(repository, List.of("worktree", "remove", "--force", destination.toString()));
+            if (result.exitCode() == 0) Files.deleteIfExists(ownershipMarker(destination));
+            else System.err.println("Picamigos could not remove temporary review worktree " + destination + ": " + result.stderr());
         } catch (Exception e) {
             System.err.println("Picamigos could not remove temporary review worktree " + destination + ": " + e.getMessage());
         }
@@ -82,5 +87,13 @@ public final class GitWorkspaceManager {
 
     private RepositoryLock repositoryLock(Path repository) throws IOException {
         return RepositoryLock.acquire(config.home().resolve("locks"), repository);
+    }
+
+    private void writeOwnershipMarker(Path destination, Path repository) throws IOException {
+        Files.writeString(ownershipMarker(destination), repository.toString());
+    }
+
+    private Path ownershipMarker(Path destination) {
+        return destination.resolveSibling(destination.getFileName() + ".picamigos-owned");
     }
 }
