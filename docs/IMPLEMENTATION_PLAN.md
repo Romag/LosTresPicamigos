@@ -212,7 +212,6 @@ Default data location:
 
 ```text
 ${PICAMIGOS_HOME:-~/.picamigos}/
-├── config.json
 ├── locks/
 ├── runs/{runId}/
 │   ├── request.json
@@ -296,7 +295,7 @@ Implementors must obey all of the following:
 - Do not pass API keys, access tokens, cookies, or authentication files through tool arguments.
 - Do not log environment variables or copy vendor credential files.
 - Do not call the configured host agent by default.
-- Propagate `PICAMIGOS_DELEGATION_DEPTH` and reject depth greater than one.
+- Propagate `PICAMIGOS_DELEGATION_DEPTH` and reject any inherited depth greater than zero.
 - Do not allow child agents to invoke Picamigos recursively.
 - Do not run two writable agents in one worktree.
 - Do not retry quota errors, permission denials, or completed model calls.
@@ -320,7 +319,7 @@ Capture sanitized version/help fixtures and prove prompt transport, output, sess
 
 ### P2 — Domain and configuration model
 
-Implement typed records/enums, JSON configuration, validation, `PICAMIGOS_HOME`, and host-agent configuration.
+Implement typed records/enums, command-line and environment configuration, validation, `PICAMIGOS_HOME`, and host-agent configuration.
 
 ### P3 — Cross-platform process executor
 

@@ -17,7 +17,7 @@
 - Stdout and stderr are independently bounded.
 - One active process per provider across server instances.
 - Descendant processes are terminated on timeout, cancellation, or shutdown.
-- Nested delegation is rejected through `PICAMIGOS_DELEGATION_DEPTH`.
+- Any inherited delegation depth is rejected through `PICAMIGOS_DELEGATION_DEPTH`.
 - The configured host agent cannot invoke itself by default.
 - Working directories must be beneath the configured root or be Picamigos-owned implementation worktrees.
 - Review and planning use disposable detached Git worktrees.
@@ -28,7 +28,7 @@
 
 Provider sandboxes differ. A writable coding agent may execute repository code and dependency hooks. Worktree isolation protects the source checkout from accidental edits but is not an operating-system security boundary.
 
-Run artifacts can contain source code and prompts. Protect `PICAMIGOS_HOME`, choose an appropriate retention policy, and do not share its contents casually.
+Run artifacts can contain source code and prompts. Protect `PICAMIGOS_HOME`, choose an appropriate retention policy, and do not share its contents casually. Retention defaults to seven days and only deletes marked, direct children without following symbolic links.
 
 ## Reporting
 

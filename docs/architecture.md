@@ -27,7 +27,11 @@ Provider output is data. The Java server does not semantically merge reviews, de
 
 ## State
 
-State defaults to `~/.picamigos` and can be moved with `PICAMIGOS_HOME`. Each owned directory has a `.picamigos-owned` marker. The server never treats arbitrary directories as cleanup targets.
+State defaults to `~/.picamigos` and can be moved with `PICAMIGOS_HOME`. Run and workflow directories carry a `.picamigos-owned` marker; managed worktrees use a sibling `<runId>.picamigos-owned` marker so server metadata never pollutes Git status. The server never treats arbitrary directories as cleanup targets.
+
+Terminal run and workflow artifacts are retained for seven days by default. `PICAMIGOS_RETENTION_DAYS` changes that window. Startup cleanup removes only marked direct children, does not follow symbolic links, and asks Git to remove managed worktrees before deleting their metadata. `picamigos_cleanup_run` removes a terminal implementation worktree immediately while preserving its branch and run artifacts.
+
+Version 1 configuration comes from command-line options and `PICAMIGOS_*` environment variables. There is no `~/.picamigos/config.json` loader.
 
 ## Transport decision
 
