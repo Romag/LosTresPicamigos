@@ -43,12 +43,16 @@ public final class GitWorkspaceManager {
 
         if (request.isolation() == IsolationMode.WORKTREE) {
             String branch = "picamigos/" + runId.toString().substring(0, 8) + "/" + request.agent().value();
-            git.require(repository, List.of("worktree", "add", "-b", branch, destination.toString(), "HEAD"));
+            try (RepositoryLock ignored = repositoryLock(repository)) {
+                git.require(repository, List.of("worktree", "add", "-b", branch, destination.toString(), "HEAD"));
+            }
             Files.writeString(destination.resolve(".picamigos-worktree"), runId.toString());
             return new WorkspaceLease(destination, branch, List.of(), null);
         }
 
-        git.require(repository, List.of("worktree", "add", "--detach", destination.toString(), "HEAD"));
+        try (RepositoryLock ignored = repositoryLock(repository)) {
+            git.require(repository, List.of("worktree", "add", "--detach", destination.toString(), "HEAD"));
+        }
         List<String> warnings = new ArrayList<>();
         GitClient.Result diff = git.require(repository, List.of("diff", "--binary", "HEAD"));
         if (diff.stdout().length > 0) {
@@ -69,10 +73,14 @@ public final class GitWorkspaceManager {
     }
 
     private void cleanup(Path repository, Path destination) {
-        try {
+        try (RepositoryLock ignored = repositoryLock(repository)) {
             git.run(repository, List.of("worktree", "remove", "--force", destination.toString()));
         } catch (Exception e) {
             System.err.println("Picamigos could not remove temporary review worktree " + destination + ": " + e.getMessage());
         }
+    }
+
+    private RepositoryLock repositoryLock(Path repository) throws IOException {
+        return RepositoryLock.acquire(config.home().resolve("locks"), repository);
     }
 }
