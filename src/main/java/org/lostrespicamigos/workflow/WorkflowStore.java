@@ -3,6 +3,7 @@ package org.lostrespicamigos.workflow;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.lostrespicamigos.domain.WorkflowRecord;
 import org.lostrespicamigos.domain.WorkflowStatus;
+import org.lostrespicamigos.retention.OwnedDirectoryCleaner;
 
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -11,6 +12,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 public final class WorkflowStore {
@@ -47,6 +51,26 @@ public final class WorkflowStore {
         } catch (IOException e) {
             return Optional.empty();
         }
+    }
+
+    public List<WorkflowRecord> list() throws IOException {
+        List<WorkflowRecord> records = new ArrayList<>();
+        try (var paths = Files.list(directory)) {
+            paths.filter(path -> Files.isDirectory(path, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+                    .forEach(path -> {
+                        try {
+                            load(UUID.fromString(path.getFileName().toString())).ifPresent(records::add);
+                        } catch (IllegalArgumentException ignored) {
+                            // Ignore unrelated directories; only UUID-named owned records are eligible.
+                        }
+                    });
+        }
+        records.sort(Comparator.comparing(WorkflowRecord::createdAt).reversed());
+        return List.copyOf(records);
+    }
+
+    public synchronized void delete(UUID id) throws IOException {
+        OwnedDirectoryCleaner.deleteDirectChild(directory, directory.resolve(id.toString()), ".picamigos-owned");
     }
 
     private void recoverAbandoned() throws IOException {

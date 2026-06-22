@@ -14,7 +14,15 @@ public record PicamigosConfig(
         boolean allowSelfInvocation,
         boolean allowDirectWrites,
         boolean allowDangerousPermissions,
-        long maxOutputBytes) {
+        long maxOutputBytes,
+        int retentionDays) {
+
+    public PicamigosConfig(Path home, Path allowedRoot, AgentId hostAgent, Map<AgentId, String> commands,
+                           boolean allowSelfInvocation, boolean allowDirectWrites,
+                           boolean allowDangerousPermissions, long maxOutputBytes) {
+        this(home, allowedRoot, hostAgent, commands, allowSelfInvocation, allowDirectWrites,
+                allowDangerousPermissions, maxOutputBytes, 7);
+    }
 
     public static PicamigosConfig fromEnvironment(String[] args) {
         Map<String, String> env = System.getenv();
@@ -42,7 +50,8 @@ public record PicamigosConfig(
                 Boolean.parseBoolean(env.getOrDefault("PICAMIGOS_ALLOW_SELF", "false")),
                 Boolean.parseBoolean(env.getOrDefault("PICAMIGOS_ALLOW_DIRECT_WRITES", "false")),
                 Boolean.parseBoolean(env.getOrDefault("PICAMIGOS_ALLOW_DANGEROUS_PERMISSIONS", "false")),
-                parsePositiveLong(env.getOrDefault("PICAMIGOS_MAX_OUTPUT_BYTES", "10485760")));
+                parsePositiveLong(env.getOrDefault("PICAMIGOS_MAX_OUTPUT_BYTES", "10485760")),
+                parsePositiveInt(env.getOrDefault("PICAMIGOS_RETENTION_DAYS", "7")));
     }
 
     private static String requireValue(String[] args, int index, String option) {
@@ -53,6 +62,12 @@ public record PicamigosConfig(
     private static long parsePositiveLong(String value) {
         long result = Long.parseLong(value);
         if (result <= 0) throw new IllegalArgumentException("PICAMIGOS_MAX_OUTPUT_BYTES must be positive");
+        return result;
+    }
+
+    private static int parsePositiveInt(String value) {
+        int result = Integer.parseInt(value);
+        if (result <= 0) throw new IllegalArgumentException("PICAMIGOS_RETENTION_DAYS must be positive");
         return result;
     }
 }

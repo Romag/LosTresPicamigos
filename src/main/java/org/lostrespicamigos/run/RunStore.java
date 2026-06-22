@@ -5,6 +5,7 @@ import org.lostrespicamigos.domain.AgentRequest;
 import org.lostrespicamigos.domain.AgentResult;
 import org.lostrespicamigos.domain.RunRecord;
 import org.lostrespicamigos.domain.RunStatus;
+import org.lostrespicamigos.retention.OwnedDirectoryCleaner;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -105,6 +106,10 @@ public final class RunStore {
             throw new IllegalArgumentException("Unsupported artifact name");
         }
         return directory(runId).resolve(name);
+    }
+
+    public synchronized void delete(UUID runId) throws IOException {
+        OwnedDirectoryCleaner.deleteDirectChild(runsDirectory, directory(runId), ".picamigos-owned");
     }
 
     private Path directory(UUID runId) {

@@ -74,10 +74,8 @@ public final class GitWorkspaceManager {
         Path worktrees = config.home().resolve("worktrees").toAbsolutePath().normalize();
         Path normalized = destination.toAbsolutePath().normalize();
         Path marker = ownershipMarker(normalized);
-        if (!worktrees.equals(normalized.getParent()) || Files.isSymbolicLink(normalized)
-                || !Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS)) {
-            throw new SecurityException("Refusing to remove an unowned worktree: " + destination);
-        }
+        if (!worktrees.equals(normalized.getParent()) || !Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS)) return false;
+        if (Files.isSymbolicLink(normalized)) throw new SecurityException("Refusing to remove a symbolic-link worktree");
         Path repository = Path.of(Files.readString(marker).strip()).toRealPath();
         if (!repository.startsWith(config.allowedRoot().toRealPath())) {
             throw new SecurityException("Managed worktree repository is outside the configured root");

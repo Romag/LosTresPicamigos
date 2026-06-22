@@ -7,6 +7,7 @@ import org.lostrespicamigos.config.PicamigosConfig;
 import org.lostrespicamigos.mcp.PicamigosMcpServer;
 import org.lostrespicamigos.process.ExecutableResolver;
 import org.lostrespicamigos.process.ProcessRunner;
+import org.lostrespicamigos.retention.RetentionService;
 import org.lostrespicamigos.run.RunService;
 import org.lostrespicamigos.run.RunStore;
 import org.lostrespicamigos.workspace.GitWorkspaceManager;
@@ -25,9 +26,12 @@ public final class Main {
         ObjectMapper mapper = JsonSupport.createMapper();
         AgentRegistry registry = new AgentRegistry(mapper);
         RunStore store = new RunStore(config.home(), mapper);
+        GitWorkspaceManager workspaceManager = new GitWorkspaceManager(config);
         RunService runs = new RunService(config, registry, new ExecutableResolver(), new ProcessRunner(), store,
-                new GitWorkspaceManager(config));
-        WorkflowService workflows = new WorkflowService(runs, new WorkflowStore(config.home(), mapper));
+                workspaceManager);
+        WorkflowStore workflowStore = new WorkflowStore(config.home(), mapper);
+        WorkflowService workflows = new WorkflowService(runs, workflowStore);
+        new RetentionService(config, store, workflowStore, workspaceManager).purgeExpired(java.time.Instant.now());
         PicamigosMcpServer server = new PicamigosMcpServer(config, mapper, runs, workflows);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             server.close();
