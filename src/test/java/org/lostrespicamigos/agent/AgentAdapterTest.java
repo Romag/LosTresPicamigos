@@ -60,10 +60,23 @@ class AgentAdapterTest {
                 AccessMode.READ_ONLY), workspace);
 
         assertEquals(PromptTransport.ARGUMENT, command.promptTransport());
+        assertEquals(23_000, adapter.maxTaskCharacters());
         assertTrue(command.command().contains("--sandbox"));
         assertFalse(command.command().contains("--dangerously-skip-permissions"));
         AgentResult result = adapter.parse(new ProcessExecutionResult(0, "Looks good\n", "", Duration.ZERO, false, false, false));
         assertEquals("Looks good", result.text());
+    }
+
+    @Test
+    void antigravityTaskLimitLeavesRoomForThePromptContract() {
+        AntigravityAdapter adapter = new AntigravityAdapter();
+        AgentRequest request = new AgentRequest(AgentId.ANTIGRAVITY, AgentRole.IMPLEMENT,
+                "x".repeat(adapter.maxTaskCharacters()), workspace, AccessMode.WORKSPACE_WRITE,
+                IsolationMode.WORKTREE, SessionSpec.fresh(), Duration.ofMinutes(5), false);
+
+        AgentCommand command = assertDoesNotThrow(() -> adapter.buildCommand(Path.of("agy"), request, workspace));
+
+        assertTrue(command.prompt().length() <= 24_000);
     }
 
     private AgentRequest request(AgentId agent, AgentRole role, AccessMode access) {

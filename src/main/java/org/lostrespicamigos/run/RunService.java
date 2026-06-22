@@ -232,6 +232,10 @@ public final class RunService implements AutoCloseable {
         }
     }
 
+    public int maxTaskCharacters(AgentId agent) {
+        return registry.get(agent).maxTaskCharacters();
+    }
+
     private String firstNonBlank(String first, String second) {
         String value = first == null || first.isBlank() ? second : first;
         if (value == null) return "";

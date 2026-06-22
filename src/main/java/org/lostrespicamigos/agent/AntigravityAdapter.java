@@ -9,10 +9,12 @@ import java.util.Map;
 
 public final class AntigravityAdapter implements AgentAdapter {
     private static final int MAX_ARGUMENT_PROMPT = 24_000;
+    private static final int MAX_TASK_CHARACTERS = 23_000;
 
     @Override public AgentId id() { return AgentId.ANTIGRAVITY; }
     @Override public List<String> versionArguments() { return List.of("--version"); }
     @Override public List<String> capabilities() { return List.of("plain-text", "print", "continue", "conversation", "sandbox"); }
+    @Override public int maxTaskCharacters() { return MAX_TASK_CHARACTERS; }
 
     @Override
     public AgentCommand buildCommand(Path executable, AgentRequest request, Path effectiveDirectory) {

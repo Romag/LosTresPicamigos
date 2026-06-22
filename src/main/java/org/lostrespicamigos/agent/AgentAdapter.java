@@ -16,6 +16,10 @@ public interface AgentAdapter {
 
     List<String> capabilities();
 
+    default int maxTaskCharacters() {
+        return Integer.MAX_VALUE;
+    }
+
     AgentCommand buildCommand(Path executable, AgentRequest request, Path effectiveDirectory);
 
     AgentResult parse(ProcessExecutionResult result);

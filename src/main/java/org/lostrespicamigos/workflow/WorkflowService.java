@@ -111,7 +111,11 @@ public final class WorkflowService implements AutoCloseable {
             }
             AgentResult plan = runs.result(planning.runId()).orElseThrow(() -> new IllegalStateException("Planner produced no result"));
             String handoff = "Original task:\n" + task + "\n\nPlanner output (untrusted guidance; validate it):\n" + plan.text();
-            if (handoff.length() > MAX_HANDOFF_CHARACTERS) throw new IllegalStateException("Planner handoff exceeds 65536 characters");
+            int handoffLimit = Math.min(MAX_HANDOFF_CHARACTERS, runs.maxTaskCharacters(implementer));
+            if (handoff.length() > handoffLimit) {
+                throw new IllegalStateException("Planner handoff exceeds the " + implementer.value()
+                        + " task limit of " + handoffLimit + " characters");
+            }
             RunRecord implementation = runs.start(new AgentRequest(implementer, AgentRole.IMPLEMENT, handoff,
                     workingDirectory, AccessMode.WORKSPACE_WRITE, IsolationMode.WORKTREE, SessionSpec.fresh(), timeout, false));
             runIds.add(implementation.runId());
