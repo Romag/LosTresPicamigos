@@ -44,6 +44,23 @@ class ProcessRunnerTest {
     }
 
     @Test
+    void terminatesWhenCancellationWinsAtProcessPublication() throws Exception {
+        AgentCommand command = fakeCommand(List.of("sleep", "10000"), PromptTransport.STDIN, "");
+        AtomicBoolean cancelled = new AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicReference<ProcessHandle> handle = new java.util.concurrent.atomic.AtomicReference<>();
+
+        var result = runner.execute(command, Path.of("").toAbsolutePath(), Duration.ofSeconds(10),
+                1024, started -> {
+                    handle.set(started);
+                    cancelled.set(true);
+                }, cancelled);
+
+        assertTrue(result.cancelled());
+        assertFalse(result.timedOut());
+        assertFalse(handle.get().isAlive());
+    }
+
+    @Test
     void boundsOutputWithoutAllocatingTheWholeStream() throws Exception {
         AgentCommand command = fakeCommand(List.of("flood", "50000"), PromptTransport.STDIN, "");
         var result = runner.execute(command, Path.of("").toAbsolutePath(), Duration.ofSeconds(10),

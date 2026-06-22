@@ -46,6 +46,9 @@ public final class ProcessRunner {
         Instant started = Instant.now();
         Process process = builder.start();
         onStart.accept(process.toHandle());
+        if (cancelled.get() && process.isAlive()) {
+            ProcessTree.terminate(process.toHandle(), Duration.ofSeconds(2));
+        }
 
         if (agentCommand.promptTransport() == PromptTransport.STDIN) {
             try (var stdin = process.getOutputStream()) {

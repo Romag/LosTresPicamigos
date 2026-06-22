@@ -164,6 +164,9 @@ public final class RunService implements AutoCloseable {
                     lease.directory(), request.timeout(), config.maxOutputBytes(),
                     handle -> {
                         activeRun.process.set(handle);
+                        if (activeRun.cancelled.get() && handle.isAlive()) {
+                            ProcessTree.terminate(handle, Duration.ofSeconds(2));
+                        }
                         try {
                             RunRecord withProcess = running.transition(RunStatus.RUNNING, null, null, handle.pid(), null, "Running");
                             latest.set(withProcess);
