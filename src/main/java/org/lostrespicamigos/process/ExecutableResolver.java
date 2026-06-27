@@ -10,13 +10,19 @@ import java.util.Optional;
 
 public final class ExecutableResolver {
     private final Map<String, String> environment;
+    private final boolean windows;
 
     public ExecutableResolver() {
-        this(System.getenv());
+        this(System.getenv(), isWindows());
     }
 
     ExecutableResolver(Map<String, String> environment) {
+        this(environment, isWindows());
+    }
+
+    ExecutableResolver(Map<String, String> environment, boolean windows) {
         this.environment = environment;
+        this.windows = windows;
     }
 
     public Resolution resolve(String configuredCommand) {
@@ -39,7 +45,6 @@ public final class ExecutableResolver {
 
     private List<Path> candidates(String command) {
         List<Path> candidates = new ArrayList<>();
-        boolean windows = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
         String[] extensions = windows ? new String[]{".exe", ".com", ".cmd", ".bat", ""} : new String[]{""};
         String pathValue = environment.getOrDefault("PATH", environment.getOrDefault("Path", ""));
         for (String directory : pathValue.split(java.io.File.pathSeparator)) {
@@ -64,13 +69,20 @@ public final class ExecutableResolver {
     private Resolution validate(Path candidate) {
         if (!Files.isRegularFile(candidate)) return Resolution.missing("Not found: " + candidate);
         String lower = candidate.getFileName().toString().toLowerCase(Locale.ROOT);
-        if (lower.endsWith(".cmd") || lower.endsWith(".bat")) {
-            return Resolution.missing("Shell launcher is not supported without its native executable: " + candidate);
+        if (lower.endsWith(".ps1")) {
+            return Resolution.missing("PowerShell launcher is not supported: " + candidate);
         }
-        if (!System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win") && !Files.isExecutable(candidate)) {
+        if (!windows && (lower.endsWith(".cmd") || lower.endsWith(".bat"))) {
+            return Resolution.missing("Windows launcher is not supported on this platform: " + candidate);
+        }
+        if (!windows && !Files.isExecutable(candidate)) {
             return Resolution.missing("File is not executable: " + candidate);
         }
         return new Resolution(Optional.of(candidate.toAbsolutePath().normalize()), null);
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
     }
 
     public record Resolution(Optional<Path> executable, String problem) {

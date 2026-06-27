@@ -62,7 +62,7 @@ PICAMIGOS_ANTIGRAVITY_COMMAND
 
 Completed run and workflow artifacts are retained for seven days. Set `PICAMIGOS_RETENTION_DAYS` to a positive whole number to change the startup cleanup window. Full provider streams remain in MCP resources; `picamigos_run_result` returns only a bounded summary and artifact URIs.
 
-On Windows, the server intentionally refuses `.cmd` and `.bat` launchers. Point it at the provider's native `.exe` instead.
+On Windows, npm-style `.cmd` and `.bat` provider launchers are accepted because some global CLI installs expose only those shims. Native `.exe` launchers are still preferred when available. PowerShell `.ps1` launchers remain unsupported.
 
 ## First check
 
