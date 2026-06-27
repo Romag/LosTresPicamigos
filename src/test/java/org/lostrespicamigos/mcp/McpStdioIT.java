@@ -55,7 +55,8 @@ class McpStdioIT {
                     .map(node -> node.path("name").asText()).collect(Collectors.toSet());
             assertTrue(names.containsAll(Set.of("picamigos_doctor", "picamigos_delegate", "picamigos_run_status",
                     "picamigos_run_result", "picamigos_cancel_run", "picamigos_list_runs",
-                    "picamigos_cleanup_run", "picamigos_start_workflow", "picamigos_workflow_status")), names.toString());
+                    "picamigos_cleanup_run", "picamigos_start_workflow", "picamigos_workflow_status",
+                    "picamigos_cancel_workflow", "picamigos_cleanup_workflow")), names.toString());
 
             String escapedRoot = mapper.writeValueAsString(root.toString());
             send(writer, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"picamigos_doctor\",\"arguments\":{\"workingDirectory\":"

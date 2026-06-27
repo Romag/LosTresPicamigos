@@ -32,7 +32,8 @@ public final class McpTools {
     }
 
     public List<SyncToolSpecification> all() {
-        return List.of(doctor(), delegate(), status(), result(), cancel(), cleanup(), listRuns(), startWorkflow(), workflowStatus());
+        return List.of(doctor(), delegate(), status(), result(), cancel(), cleanup(), listRuns(), startWorkflow(),
+                workflowStatus(), cancelWorkflow(), cleanupWorkflow());
     }
 
     private SyncToolSpecification doctor() {
@@ -168,6 +169,28 @@ public final class McpTools {
         return specification("picamigos_workflow_status", "Read workflow stage and child run IDs", schema, true,
                 arguments -> workflows.status(UUID.fromString(string(arguments, "workflowId", true)))
                         .orElseThrow(() -> new IllegalArgumentException("Unknown workflow")));
+    }
+
+    private SyncToolSpecification cancelWorkflow() {
+        Map<String, Object> schema = objectSchema(Map.of(
+                "workflowId", stringProperty("Workflow UUID")), List.of("workflowId"));
+        return specification("picamigos_cancel_workflow", "Cancel the active child runs of a workflow",
+                schema, false, arguments -> {
+                    UUID id = uuid(arguments, "workflowId");
+                    return Map.of("workflowId", id.toString(), "cancellationRequested", workflows.cancel(id));
+                });
+    }
+
+    private SyncToolSpecification cleanupWorkflow() {
+        Map<String, Object> schema = objectSchema(Map.of(
+                "workflowId", stringProperty("Terminal workflow UUID")), List.of("workflowId"));
+        return specification("picamigos_cleanup_workflow",
+                "Remove owned implementation worktrees for a terminal workflow while preserving branches and artifacts",
+                schema, false, true, arguments -> {
+                    UUID id = uuid(arguments, "workflowId");
+                    return Map.of("workflowId", id.toString(),
+                            "worktreesRemoved", workflows.cleanup(id), "branchesPreserved", true);
+                });
     }
 
     private SyncToolSpecification specification(String name, String description, Map<String, Object> schema,

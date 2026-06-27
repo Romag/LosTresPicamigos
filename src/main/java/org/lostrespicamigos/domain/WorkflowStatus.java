@@ -4,5 +4,6 @@ public enum WorkflowStatus {
     RUNNING,
     SUCCEEDED,
     FAILED,
+    CANCELLED,
     ABORTED
 }

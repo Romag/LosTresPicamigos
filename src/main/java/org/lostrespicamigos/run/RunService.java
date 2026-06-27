@@ -25,7 +25,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-public final class RunService implements AutoCloseable {
+public final class RunService implements RunOperations, AutoCloseable {
     private final PicamigosConfig config;
     private final AgentRegistry registry;
     private final ExecutableResolver executableResolver;

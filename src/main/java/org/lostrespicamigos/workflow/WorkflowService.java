@@ -1,7 +1,7 @@
 package org.lostrespicamigos.workflow;
 
 import org.lostrespicamigos.domain.*;
-import org.lostrespicamigos.run.RunService;
+import org.lostrespicamigos.run.RunOperations;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -13,14 +13,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class WorkflowService implements AutoCloseable {
     private static final int MAX_HANDOFF_CHARACTERS = 65_536;
-    private final RunService runs;
+    private final RunOperations runs;
     private final WorkflowStore store;
     private final ExecutorService executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+    private final ConcurrentHashMap<UUID, Object> workflowGates = new ConcurrentHashMap<>();
 
-    public WorkflowService(RunService runs, WorkflowStore store) {
+    public WorkflowService(RunOperations runs, WorkflowStore store) {
         this.runs = runs;
         this.store = store;
     }
@@ -40,6 +42,7 @@ public final class WorkflowService implements AutoCloseable {
         }
         reviewers.forEach(runs::validateTarget);
         UUID id = UUID.randomUUID();
+        workflowGates.put(id, new Object());
         List<UUID> runIds = new ArrayList<>();
         WorkflowRecord record = new WorkflowRecord(id, ProcessHandle.current().pid(), OwnerProcess.currentStartInstant(),
                 WorkflowType.REVIEW_PANEL,
@@ -78,6 +81,7 @@ public final class WorkflowService implements AutoCloseable {
         runs.validateTarget(implementer);
         runs.validateTarget(reviewer);
         UUID id = UUID.randomUUID();
+        workflowGates.put(id, new Object());
         WorkflowRecord record = new WorkflowRecord(id, ProcessHandle.current().pid(), OwnerProcess.currentStartInstant(),
                 WorkflowType.PLAN_IMPLEMENT_REVIEW,
                 WorkflowStatus.RUNNING, "starting", List.of(), Instant.now(), null, "Starting planner");
@@ -102,15 +106,38 @@ public final class WorkflowService implements AutoCloseable {
         return store.load(id);
     }
 
+    public boolean cancel(UUID id) throws IOException {
+        synchronized (gate(id)) {
+            WorkflowRecord current = store.load(id).orElseThrow(() -> new IllegalArgumentException("Unknown workflow: " + id));
+            if (current.status() != WorkflowStatus.RUNNING) return false;
+            store.save(current.update(WorkflowStatus.CANCELLED, current.stage(), current.runIds(),
+                    "Workflow cancellation requested"));
+            for (UUID runId : current.runIds()) runs.cancel(runId);
+            return true;
+        }
+    }
+
+    public int cleanup(UUID id) throws IOException, InterruptedException {
+        WorkflowRecord current = store.load(id).orElseThrow(() -> new IllegalArgumentException("Unknown workflow: " + id));
+        if (current.status() == WorkflowStatus.RUNNING) throw new IllegalStateException("Only terminal workflows can be cleaned up");
+        int removed = 0;
+        for (UUID runId : current.runIds()) if (runs.cleanup(runId)) removed++;
+        return removed;
+    }
+
     private void monitorPanel(WorkflowRecord record) {
         try {
             boolean allSucceeded = true;
+            boolean anyCancelled = false;
             for (UUID runId : record.runIds()) {
                 RunRecord run = await(runId);
                 allSucceeded &= run.status() == RunStatus.SUCCEEDED;
+                anyCancelled |= run.status() == RunStatus.CANCELLED;
             }
-            store.save(record.update(allSucceeded ? WorkflowStatus.SUCCEEDED : WorkflowStatus.FAILED,
-                    "complete", record.runIds(), allSucceeded ? "All independent reviews completed" : "One or more reviewers failed"));
+            WorkflowStatus status = anyCancelled ? WorkflowStatus.CANCELLED
+                    : allSucceeded ? WorkflowStatus.SUCCEEDED : WorkflowStatus.FAILED;
+            completeIfRunning(record, status, anyCancelled ? "One or more reviews were cancelled"
+                    : allSucceeded ? "All independent reviews completed" : "One or more reviewers failed");
         } catch (Exception e) {
             fail(record, "Review panel failed: " + e.getMessage());
         }
@@ -123,7 +150,7 @@ public final class WorkflowService implements AutoCloseable {
         try {
             RunRecord planning = await(runIds.getFirst());
             if (planning.status() != RunStatus.SUCCEEDED) {
-                fail(record, "Planning stage did not succeed");
+                stopAfterChild(record, "Planning", planning);
                 return;
             }
             AgentResult plan = runs.result(planning.runId()).orElseThrow(() -> new IllegalStateException("Planner produced no result"));
@@ -133,31 +160,37 @@ public final class WorkflowService implements AutoCloseable {
                 throw new IllegalStateException("Planner handoff exceeds the " + implementer.value()
                         + " task limit of " + handoffLimit + " characters");
             }
-            RunRecord implementation = runs.start(new AgentRequest(implementer, AgentRole.IMPLEMENT, handoff,
-                    workingDirectory, AccessMode.WORKSPACE_WRITE, IsolationMode.WORKTREE, SessionSpec.fresh(), timeout,
-                    includeUntracked, false));
-            runIds.add(implementation.runId());
-            record = record.update(WorkflowStatus.RUNNING, "implement", runIds, "Implementer running in an isolated worktree");
-            store.save(record);
+            StartedStage implementationStage = startStage(record, new AgentRequest(implementer, AgentRole.IMPLEMENT,
+                    handoff, workingDirectory, AccessMode.WORKSPACE_WRITE, IsolationMode.WORKTREE,
+                    SessionSpec.fresh(), timeout, includeUntracked, false), "implement",
+                    "Implementer running in an isolated worktree").orElse(null);
+            if (implementationStage == null) return;
+            record = implementationStage.workflow();
+            RunRecord implementation = implementationStage.run();
+            runIds = new ArrayList<>(record.runIds());
 
             implementation = await(implementation.runId());
             if (implementation.status() != RunStatus.SUCCEEDED) {
-                fail(record, "Implementation stage did not succeed");
+                stopAfterChild(record, "Implementation", implementation);
                 return;
             }
             Path implementationDirectory = Path.of(implementation.effectiveDirectory());
             String reviewTask = "Review the implementation of this task:\n" + task
                     + "\n\nThe implementation was produced on branch " + implementation.branch() + ".";
-            RunRecord review = runs.start(new AgentRequest(reviewer, AgentRole.REVIEW, reviewTask,
+            StartedStage reviewStage = startStage(record, new AgentRequest(reviewer, AgentRole.REVIEW, reviewTask,
                     implementationDirectory, AccessMode.READ_ONLY, IsolationMode.SNAPSHOT, SessionSpec.fresh(), timeout,
-                    includeUntracked, false));
-            runIds.add(review.runId());
-            record = record.update(WorkflowStatus.RUNNING, "review", runIds, "Reviewer running against the implementation snapshot");
-            store.save(record);
+                    includeUntracked, false), "review", "Reviewer running against the implementation snapshot")
+                    .orElse(null);
+            if (reviewStage == null) return;
+            record = reviewStage.workflow();
+            RunRecord review = reviewStage.run();
+            runIds = new ArrayList<>(record.runIds());
 
             review = await(review.runId());
-            store.save(record.update(review.status() == RunStatus.SUCCEEDED ? WorkflowStatus.SUCCEEDED : WorkflowStatus.FAILED,
-                    "complete", runIds, review.status() == RunStatus.SUCCEEDED ? "Workflow complete" : "Review stage failed"));
+            if (review.status() == RunStatus.CANCELLED) completeIfRunning(record, WorkflowStatus.CANCELLED, "Review was cancelled");
+            else completeIfRunning(record, review.status() == RunStatus.SUCCEEDED
+                    ? WorkflowStatus.SUCCEEDED : WorkflowStatus.FAILED,
+                    review.status() == RunStatus.SUCCEEDED ? "Workflow complete" : "Review stage failed");
         } catch (Exception e) {
             fail(record, "Workflow failed: " + e.getMessage());
         }
@@ -172,12 +205,45 @@ public final class WorkflowService implements AutoCloseable {
     }
 
     private void fail(WorkflowRecord record, String message) {
-        try {
+        completeIfRunning(record, WorkflowStatus.FAILED, message);
+    }
+
+    private void stopAfterChild(WorkflowRecord record, String stage, RunRecord child) {
+        completeIfRunning(record, child.status() == RunStatus.CANCELLED ? WorkflowStatus.CANCELLED : WorkflowStatus.FAILED,
+                stage + (child.status() == RunStatus.CANCELLED ? " stage was cancelled" : " stage did not succeed"));
+    }
+
+    private Optional<StartedStage> startStage(WorkflowRecord record, AgentRequest request, String stage,
+                                              String message) throws IOException {
+        synchronized (gate(record.workflowId())) {
             WorkflowRecord current = store.load(record.workflowId()).orElse(record);
-            store.save(current.update(WorkflowStatus.FAILED, current.stage(), current.runIds(), message));
+            if (current.status() != WorkflowStatus.RUNNING) return Optional.empty();
+            RunRecord run = runs.start(request);
+            List<UUID> runIds = new ArrayList<>(current.runIds());
+            runIds.add(run.runId());
+            WorkflowRecord updated = current.update(WorkflowStatus.RUNNING, stage, runIds, message);
+            store.save(updated);
+            return Optional.of(new StartedStage(updated, run));
+        }
+    }
+
+    private void completeIfRunning(WorkflowRecord record, WorkflowStatus status, String message) {
+        try {
+            synchronized (gate(record.workflowId())) {
+                WorkflowRecord current = store.load(record.workflowId()).orElse(record);
+                if (current.status() != WorkflowStatus.RUNNING) return;
+                store.save(current.update(status, "complete", current.runIds(), message));
+            }
         } catch (IOException e) {
             System.err.println("Could not persist workflow failure: " + e.getMessage());
         }
+    }
+
+    private Object gate(UUID workflowId) {
+        return workflowGates.computeIfAbsent(workflowId, ignored -> new Object());
+    }
+
+    private record StartedStage(WorkflowRecord workflow, RunRecord run) {
     }
 
     @Override
