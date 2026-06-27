@@ -167,23 +167,25 @@ public final class RunService implements RunOperations, AutoCloseable {
             latest.set(running);
             store.save(running);
             AgentAdapter adapter = registry.get(request.agent());
-            ProcessExecutionResult process = processRunner.execute(
-                    adapter.buildCommand(resolution.executable().orElseThrow(), request, lease.directory()),
-                    lease.directory(), request.timeout(), config.maxOutputBytes(),
-                    handle -> {
-                        activeRun.process.set(handle);
-                        if (activeRun.cancelled.get() && handle.isAlive()) {
-                            ProcessTree.terminate(handle, Duration.ofSeconds(2));
-                        }
-                        try {
-                            RunRecord withProcess = running.transition(RunStatus.RUNNING, null, null, handle.pid(), null, "Running");
-                            latest.set(withProcess);
-                            store.save(withProcess);
-                        } catch (IOException e) {
-                            System.err.println("Could not persist process id: " + e.getMessage());
-                        }
-                    }, activeRun.cancelled,
-                    (stream, bytes, length) -> store.appendOutput(initial.runId(), stream, bytes, length));
+            ProcessExecutionResult process;
+            try (RunStore.OutputWriter output = store.openOutputWriter(initial.runId())) {
+                process = processRunner.execute(
+                        adapter.buildCommand(resolution.executable().orElseThrow(), request, lease.directory()),
+                        lease.directory(), request.timeout(), config.maxOutputBytes(),
+                        handle -> {
+                            activeRun.process.set(handle);
+                            if (activeRun.cancelled.get() && handle.isAlive()) {
+                                ProcessTree.terminate(handle, Duration.ofSeconds(2));
+                            }
+                            try {
+                                RunRecord withProcess = running.transition(RunStatus.RUNNING, null, null, handle.pid(), null, "Running");
+                                latest.set(withProcess);
+                                store.save(withProcess);
+                            } catch (IOException e) {
+                                System.err.println("Could not persist process id: " + e.getMessage());
+                            }
+                        }, activeRun.cancelled, output::append);
+            }
             AgentResult parsed = adapter.parse(process);
             if (!lease.warnings().isEmpty()) {
                 List<String> warnings = new ArrayList<>(parsed.warnings());

@@ -9,6 +9,7 @@ import org.lostrespicamigos.domain.OwnerProcess;
 import org.lostrespicamigos.retention.OwnedDirectoryCleaner;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -59,11 +60,18 @@ public final class RunStore {
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
     }
 
-    public synchronized void appendOutput(UUID runId, org.lostrespicamigos.process.ProcessRunner.Stream stream,
-                                          byte[] bytes, int length) throws IOException {
-        String name = stream == org.lostrespicamigos.process.ProcessRunner.Stream.STDOUT ? "stdout.log" : "stderr.log";
-        Files.write(directory(runId).resolve(name), java.util.Arrays.copyOf(bytes, length),
+    public OutputWriter openOutputWriter(UUID runId) throws IOException {
+        Path directory = directory(runId);
+        OutputStream stdout = Files.newOutputStream(directory.resolve("stdout.log"),
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        try {
+            OutputStream stderr = Files.newOutputStream(directory.resolve("stderr.log"),
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            return new OutputWriter(stdout, stderr);
+        } catch (IOException e) {
+            stdout.close();
+            throw e;
+        }
     }
 
     public Optional<RunRecord> load(UUID runId) {
@@ -140,5 +148,38 @@ public final class RunStore {
     private record RequestArtifact(String agent, String role, String task, String workingDirectory, String access,
                                    String isolation, String sessionMode, String sessionId, long timeoutSeconds,
                                    boolean includeUntracked, boolean allowDangerousPermissions) {
+    }
+
+    public static final class OutputWriter implements AutoCloseable {
+        private final OutputStream stdout;
+        private final OutputStream stderr;
+
+        private OutputWriter(OutputStream stdout, OutputStream stderr) {
+            this.stdout = stdout;
+            this.stderr = stderr;
+        }
+
+        public void append(org.lostrespicamigos.process.ProcessRunner.Stream stream, byte[] bytes, int length)
+                throws IOException {
+            OutputStream target = stream == org.lostrespicamigos.process.ProcessRunner.Stream.STDOUT ? stdout : stderr;
+            target.write(bytes, 0, length);
+        }
+
+        @Override
+        public void close() throws IOException {
+            IOException failure = null;
+            try {
+                stdout.close();
+            } catch (IOException e) {
+                failure = e;
+            }
+            try {
+                stderr.close();
+            } catch (IOException e) {
+                if (failure == null) failure = e;
+                else failure.addSuppressed(e);
+            }
+            if (failure != null) throw failure;
+        }
     }
 }
